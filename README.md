@@ -35,16 +35,20 @@ PhenoView expects a tidy CSV file where:
 - columns contain metadata or numeric features
 - at least one column should define the group variable
 - an optional Condition column can represent treatments
+- an optional PairID column can define matched or paired samples for paired visualization and statistical analysis
 
 Example structure:
 
-| SampleID | Group | Condition | Feature1 | Feature2 |
-|----------|------|-----------|----------|----------|
-| S1 | Control | Untreated | 1.2 | 5.4 |
-| S2 | Control | IL1/TNFa | 1.5 | 5.1 |
-| S3 | ERG/FLI1 | Untreated | 2.0 | 4.7 |
+| SampleID | Group | Condition | PairID | Feature1 | Feature2 |
+|----------|------|-----------|--------|----------|----------|
+| S1 | Control | Untreated | 1 | 1.2 | 5.4 |
+| S2 | ERG/FLI1 | Untreated | 1 | 1.8 | 4.9 |
+| S3 | Control | IL1/TNFa | 2 | 1.5 | 5.1 |
+| S4 | ERG/FLI1 | IL1/TNFa | 2 | 2.0 | 4.7 |
 
 If no Condition column is provided, analyses are performed using the Group variable only.
+
+If no PairID column is present, paired visualization and paired statistical options are not shown.
 
 # Main Features
 
