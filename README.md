@@ -2,6 +2,10 @@
 
 Interactive application for exploration and visualization of phenotype datasets.
 
+## Abstract
+
+PhenoView is a lightweight, browser-based application designed for the exploration and visualization of high-dimensional phenotype datasets. The application accepts tidy CSV files containing sample-level measurements and provides multiple integrated analytical views, including dimensionality reduction (PCA and UMAP), correlation heatmaps, interactive group comparisons with Welch’s t-test, and z-scored feature heatmaps with hierarchical clustering. PhenoView runs locally using Streamlit and requires no programming expertise, enabling bench scientists to rapidly explore biological datasets and generate publication-ready figures.
+
 **Authors:** Ke Xu, Jesus Maria Gomez-Salinero  
 Weill Cornell Medicine
 
