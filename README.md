@@ -9,7 +9,7 @@ PhenoView is a lightweight, browser-based application designed for the explorati
 **Authors:** Ke Xu, Jesus Maria Gomez-Salinero  
 Weill Cornell Medicine
 
-# Installation
+## Installation
 
 Clone or download this repository.
 
@@ -18,7 +18,7 @@ Install the required Python packages:
 pip install -r requirements.txt
 ```
 
-# Running PhenoView
+## Running PhenoView
 
 Navigate to the folder containing the application files and run:
 ```bash
@@ -28,7 +28,7 @@ This will open a local browser window with the PhenoView interface.
 
 The application runs locally and does not require an internet connection.
 
-# Input Data Format
+## Input Data Format
 
 PhenoView expects a tidy CSV file where:
 - each row represents one sample
@@ -50,7 +50,7 @@ If no Condition column is provided, analyses are performed using the Group varia
 
 If no PairID column is present, paired visualization and paired statistical options are not shown.
 
-# Main Features
+## Main Features
 
 PhenoView provides several integrated analysis views:
 - Data preview and dataset validation
@@ -61,7 +61,7 @@ PhenoView provides several integrated analysis views:
 - Optional paired visualization when a pairing column is detected
 - Export of figures (PNG/SVG)
 
-# Dependencies
+## Dependencies
 
 Main Python packages used:
 •	streamlit
@@ -74,7 +74,7 @@ Main Python packages used:
 •	umap-learn
 •	pillow
 
-# Citation
+## Citation
 
 If you use **PhenoView** in your research, please cite:
 
