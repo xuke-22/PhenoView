@@ -81,6 +81,6 @@ If you use **PhenoView** in your research, please cite:
 Xu K., Gomez-Salinero J.M.  
 PhenoView: an interactive application for exploration and visualization of phenotype datasets.
 
-# License
+## License
 
 PhenoView is provided for academic research use.
