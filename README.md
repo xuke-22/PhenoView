@@ -9,10 +9,6 @@ PhenoView is a lightweight, browser-based application designed for the explorati
 **Authors:** Ke Xu, Jesus Maria Gomez-Salinero  
 Weill Cornell Medicine
 
-PhenoView is a lightweight Python application that allows users to explore high-dimensional phenotype datasets through an interactive browser interface. It provides dimensionality reduction, correlation analysis, group comparisons, and heatmap visualization without requiring programming experience.
-
-The application runs locally using Streamlit and generates publication-ready figures using Plotly.
-
 # Installation
 
 Clone or download this repository.
