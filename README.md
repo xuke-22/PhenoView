@@ -88,4 +88,4 @@ PhenoView: a local, privacy-preserving platform for no-code exploration of pheno
 
 ## License
 
-PhenoView is provided for academic research use.
+This project is licensed under the MIT License. See the LICENSE file for details.
