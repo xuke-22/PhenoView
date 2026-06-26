@@ -56,6 +56,7 @@ def clean_feature_names(cols):
 
     return s.tolist()
 
+@st.cache_data
 def zscore_df(df_num: pd.DataFrame) -> pd.DataFrame:
     #z-score (x - mean) / sd
     mu = df_num.mean(axis=0, skipna=True)
@@ -195,6 +196,7 @@ def natural_sort_key(val):
     parts = re.split(r'(\d+)', s)
     return tuple(int(p) if p.isdigit() else p.lower() for p in parts)
 
+@st.cache_data
 def make_safe_distance(corr_df: pd.DataFrame) -> pd.DataFrame:
     D = 1 - corr_df
     D = D.fillna(1.0)
@@ -202,8 +204,9 @@ def make_safe_distance(corr_df: pd.DataFrame) -> pd.DataFrame:
     D = (D + D.T) / 2
     D = D.clip(lower=0, upper=2)
 
-    np.fill_diagonal(D.values, 0.0)
-    return D
+    D_values = D.to_numpy(copy=True)
+    np.fill_diagonal(D_values, 0.0)
+    return pd.DataFrame(D_values, index=D.index, columns=D.columns)
 
 PLOTLY_CONFIG = {
     "toImageButtonOptions": {
@@ -396,7 +399,7 @@ if st.session_state.get("file_sig") != file_sig:
     st.cache_data.clear()
 
     #clean old key
-    for k in [
+    keys_to_clear = [
         # correlation page
         "corr_sample_select", "corr_feature_select", "corr_mode_radio",
         # embedding page
@@ -409,8 +412,22 @@ if st.session_state.get("file_sig") != file_sig:
         "cap_on", "cap_n", "cap_method",
         "filter_Genotype", "filter_sex", "filter_timepoint",
         "filter_age_weeks", "filter_age", "filter_Age", "filter_Age_weeks",
-    ]:
+        # interactive plots
+        "ip_do_ttest", "ip_control_group", "ip_apply_fdr",
+        "ip_do_paired_ttest", "ip_paired_control_group", "ip_apply_fdr_paired",
+        "ip_show_paired",
+        # heatmap
+        "heatmap_sample_select", "heatmap_feature_select",
+        "hm_cluster_rows", "hm_cluster_cols",
+        # dynamic filters
+        "enable_filters",
+    ]
+    for k in keys_to_clear:
         st.session_state.pop(k, None)
+    # also clear dynamic filter keys (dynf_*)
+    for k in list(st.session_state.keys()):
+        if k.startswith("dynf_"):
+            del st.session_state[k]
 
 st.sidebar.header("Metadata setup")
 
@@ -732,11 +749,20 @@ elif page == "Interactive plots":
     ip_h = int(h_in * ip_dpi)
 
     #choose parameter to draw
+    feat_options = list(X.columns)
+    if not feat_options:
+        st.warning("No numeric features available. Please check your data.")
+        st.stop()
+
     feat_choice = st.selectbox(
         "Choose a parameter",
-        options=list(X.columns),
+        options=feat_options,
         format_func=lambda c: pretty_map.get(c, c),
     )
+
+    if feat_choice is None or feat_choice not in X.columns:
+        st.warning("Please select a valid feature before generating the plot.")
+        st.stop()
 
     plot_type = st.radio("Plot type", ["Dots", "Bar (mean ± SEM)", "Violin"], horizontal=True)
 
@@ -786,6 +812,7 @@ elif page == "Interactive plots":
         )
 
         rows = []
+        df_t = pd.DataFrame(columns=["Group", "n_control", "n_group", "t", "p"])
 
         if has_real_condition:
             condition_list = sorted(df_plot["Condition"].astype(str).unique().tolist())
@@ -837,10 +864,11 @@ elif page == "Interactive plots":
                         "p": p_val
                     })
 
-            df_t = pd.DataFrame(rows).sort_values(
-                by=["Condition", "p"],
-                na_position="last"
-            ).reset_index(drop=True)
+            if rows:
+                df_t = pd.DataFrame(rows).sort_values(
+                    by=["Condition", "p"],
+                    na_position="last"
+                ).reset_index(drop=True)
 
         else:
             x0 = df_plot.loc[df_plot["Group"].astype(str) == control_group, "Value"].dropna().values
@@ -874,9 +902,12 @@ elif page == "Interactive plots":
                         "p": p_val
                     })
 
-                df_t = pd.DataFrame(rows).sort_values("p", na_position="last").reset_index(drop=True)
+                if rows:
+                    df_t = pd.DataFrame(rows).sort_values("p", na_position="last").reset_index(drop=True)
 
-        if len(df_t) > 0:
+        if len(df_t) == 0:
+            st.info("Please select at least two groups to run a t-test.")
+        elif len(df_t) > 0:
             n_tests = int(df_t["p"].notna().sum())
             if n_tests > 1:
                 st.warning(
@@ -1386,68 +1417,70 @@ elif page == "Heatmap (z-scored)":
 
     st.caption(f"Dropped {dropped_feat} features with any NA.")
 
-    # --- cluster COLUMNS: samples (x-axis) ---
-    if cluster_rows and Z.shape[1] >= 2:
-        # distance = 1 - corr between samples (columns)
-        C = Z.corr(method="pearson", min_periods=2)
-        D = make_safe_distance(C)
+    try:
+        # --- cluster COLUMNS: samples (x-axis) ---
+        if cluster_rows and Z.shape[1] >= 2:
+            C = Z.corr(method="pearson", min_periods=2)
+            D = make_safe_distance(C)
 
-        from scipy.spatial.distance import squareform
+            from scipy.spatial.distance import squareform
 
-        Zlink = linkage(squareform(D.values, checks=False), method="average")
-        col_order = leaves_list(Zlink)
-        Z = Z.iloc[:, col_order]
+            Zlink = linkage(squareform(D.values, checks=False), method="average")
+            col_order = leaves_list(Zlink)
+            Z = Z.iloc[:, col_order]
 
-    # --- cluster ROWS: features (y-axis) ---
-    if cluster_cols and Z.shape[0] >= 2:
-        # distance = 1 - corr between features (rows)
-        Cf = Z.T.corr(method="pearson", min_periods=2)
-        Df = make_safe_distance(Cf)
+        # --- cluster ROWS: features (y-axis) ---
+        if cluster_cols and Z.shape[0] >= 2:
+            Cf = Z.T.corr(method="pearson", min_periods=2)
+            Df = make_safe_distance(Cf)
 
-        from scipy.spatial.distance import squareform
+            from scipy.spatial.distance import squareform
 
-        Zlink_f = linkage(squareform(Df.values, checks=False), method="average")
-        row_order = leaves_list(Zlink_f)
-        Z = Z.iloc[row_order, :]
+            Zlink_f = linkage(squareform(Df.values, checks=False), method="average")
+            row_order = leaves_list(Zlink_f)
+            Z = Z.iloc[row_order, :]
 
-    # pretty column names for display (after ordering!)
-    y_labels = [pretty_map.get(c, c) for c in Z.index]
+        # pretty column names for display (after ordering!)
+        y_labels = [pretty_map.get(c, c) for c in Z.index]
 
-    fig = go.Figure(data=go.Heatmap(
-        z=Z.values,
-        x=Z.columns.tolist(),  # samples
-        y=y_labels,
-        colorscale="RdBu_r",
-        zmid=0
-    ))
-    fig.update_layout(
-        title="Z-scored Feature Matrix" + (" (clustered)" if (cluster_rows or cluster_cols) else ""),
-        xaxis_title="Samples",
-        yaxis_title="Features",
-        width=hm_w,
-        height=hm_h,
-        margin=dict(l=180, r=40, t=60, b=180),
-        font=dict(size=18, color="black")
-    )
-
-    fig.update_xaxes(
-        tickfont=dict(size=18, color="black"),
-        title_font=dict(size=22, color="black")
-    )
-
-    fig.update_yaxes(
-        tickfont=dict(size=18, color="black"),
-        title_font=dict(size=22, color="black")
-    )
-
-    fig.update_traces(
-        colorbar=dict(
-            tickfont=dict(size=18, color="black"),
-            title_font=dict(size=20, color="black")
+        fig = go.Figure(data=go.Heatmap(
+            z=Z.values,
+            x=Z.columns.tolist(),
+            y=y_labels,
+            colorscale="RdBu_r",
+            zmid=0
+        ))
+        fig.update_layout(
+            title="Z-scored Feature Matrix" + (" (clustered)" if (cluster_rows or cluster_cols) else ""),
+            xaxis_title="Samples",
+            yaxis_title="Features",
+            width=hm_w,
+            height=hm_h,
+            margin=dict(l=180, r=40, t=60, b=180),
+            font=dict(size=18, color="black")
         )
-    )
-    st.plotly_chart(fig, use_container_width=False, config=PLOTLY_CONFIG)
-    svg_download_button(fig, "PhenoView_heatmap.svg")
+
+        fig.update_xaxes(
+            tickfont=dict(size=18, color="black"),
+            title_font=dict(size=22, color="black")
+        )
+
+        fig.update_yaxes(
+            tickfont=dict(size=18, color="black"),
+            title_font=dict(size=22, color="black")
+        )
+
+        fig.update_traces(
+            colorbar=dict(
+                tickfont=dict(size=18, color="black"),
+                title_font=dict(size=20, color="black")
+            )
+        )
+        st.plotly_chart(fig, use_container_width=False, config=PLOTLY_CONFIG)
+        svg_download_button(fig, "PhenoView_heatmap.svg")
+    except Exception as e:
+        st.error("Unable to generate heatmap. Please check that valid features and samples are selected.")
+        st.caption(f"Technical details: {type(e).__name__}: {e}")
 # -----------------------------
 # Page: Correlation heatmaps (sample-sample / feature-feature)
 # -----------------------------
@@ -1498,68 +1531,72 @@ elif page == "Correlation heatmaps":
                        f"Please select ≤ {MAX_SAMPLES} to avoid freezing.")
             st.stop()
 
-        # 1)use selected sample
-        X_sub = Xz_num.loc[chosen_samples]
+        try:
+            # 1)use selected sample
+            X_sub = Xz_num.loc[chosen_samples]
 
-        X_sub = X_sub.loc[:, X_sub.notna().any(axis=0)]
+            X_sub = X_sub.loc[:, X_sub.notna().any(axis=0)]
 
-        # 2)sample–sample correlation
-        C = X_sub.T.corr(method="pearson", min_periods=2)
-        D = make_safe_distance(C)
+            # 2)sample–sample correlation
+            C = X_sub.T.corr(method="pearson", min_periods=2)
+            D = make_safe_distance(C)
 
-        from scipy.spatial.distance import squareform
+            from scipy.spatial.distance import squareform
 
-        Z = linkage(squareform(D.values, checks=False), method="average")
-        order = leaves_list(Z)
+            Z = linkage(squareform(D.values, checks=False), method="average")
+            order = leaves_list(Z)
 
-        labels_ord = [C.index[i] for i in order]
-        C_ord = C.loc[labels_ord, labels_ord]
+            labels_ord = [C.index[i] for i in order]
+            C_ord = C.loc[labels_ord, labels_ord]
 
-        # 4) heatmap tree
-        fig = go.Figure(data=go.Heatmap(
-            z=C_ord.values,
-            x=labels_ord,
-            y=labels_ord,
-            colorscale="RdBu_r",
-            zmin=-1, zmax=1,
-            zmid=0
-        ))
-        corr_w = min(max(1200, 60 * len(labels_ord)), 3000)
+            # 4) heatmap tree
+            fig = go.Figure(data=go.Heatmap(
+                z=C_ord.values,
+                x=labels_ord,
+                y=labels_ord,
+                colorscale="RdBu_r",
+                zmin=-1, zmax=1,
+                zmid=0
+            ))
+            corr_w = min(max(1200, 60 * len(labels_ord)), 3000)
 
-        fig.update_layout(
-            title="Sample–Sample Correlation (Pearson)",
-            width=corr_w,
-            height=corr_h,
-            margin=dict(l=180, r=40, t=60, b=180),
-            font=dict(size=16, color="black")
-        )
-
-        fig.update_xaxes(
-            tickfont=dict(size=18, color="black"),
-            title_font=dict(size=22, color="black")
-        )
-
-        fig.update_yaxes(
-            tickfont=dict(size=18, color="black"),
-            title_font=dict(size=22, color="black")
-        )
-
-        fig.update_traces(
-            colorbar=dict(
-                tickfont=dict(size=18, color="black"),
-                title_font=dict(size=20, color="black")
+            fig.update_layout(
+                title="Sample–Sample Correlation (Pearson)",
+                width=corr_w,
+                height=corr_h,
+                margin=dict(l=180, r=40, t=60, b=180),
+                font=dict(size=16, color="black")
             )
-        )
 
-        corr_config = {
-            "toImageButtonOptions": {
-                "format": "png",
-                "filename": "PhenoView_sample_sample_correlation",
-                "scale": 1
+            fig.update_xaxes(
+                tickfont=dict(size=18, color="black"),
+                title_font=dict(size=22, color="black")
+            )
+
+            fig.update_yaxes(
+                tickfont=dict(size=18, color="black"),
+                title_font=dict(size=22, color="black")
+            )
+
+            fig.update_traces(
+                colorbar=dict(
+                    tickfont=dict(size=18, color="black"),
+                    title_font=dict(size=20, color="black")
+                )
+            )
+
+            corr_config = {
+                "toImageButtonOptions": {
+                    "format": "png",
+                    "filename": "PhenoView_sample_sample_correlation",
+                    "scale": 1
+                }
             }
-        }
-        st.plotly_chart(fig, use_container_width=False, config=corr_config)
-        svg_download_button(fig, "PhenoView_sample_sample_correlation.svg")
+            st.plotly_chart(fig, use_container_width=False, config=corr_config)
+            svg_download_button(fig, "PhenoView_sample_sample_correlation.svg")
+        except Exception as e:
+            st.error("Unable to generate sample–sample correlation heatmap. Please check your selections.")
+            st.caption(f"Technical details: {type(e).__name__}: {e}")
 
     # ===============================
     # Feature–Feature (Pearson)
@@ -1582,69 +1619,73 @@ elif page == "Correlation heatmaps":
                        f"Please select ≤ {MAX_FEATURES} to avoid freezing.")
             st.stop()
 
-        # 1)use selected feature
-        X_sub = Xz_num[chosen_features]
+        try:
+            # 1)use selected feature
+            X_sub = Xz_num[chosen_features]
 
-        X_sub = X_sub.loc[X_sub.notna().any(axis=1)]
+            X_sub = X_sub.loc[X_sub.notna().any(axis=1)]
 
-        # 2) feature–feature correlation
-        Cf = X_sub.corr(method="pearson", min_periods=2)
-        D = make_safe_distance(Cf)
+            # 2) feature–feature correlation
+            Cf = X_sub.corr(method="pearson", min_periods=2)
+            D = make_safe_distance(Cf)
 
-        from scipy.spatial.distance import squareform
+            from scipy.spatial.distance import squareform
 
-        Z = linkage(squareform(D.values, checks=False), method="average")
-        order = leaves_list(Z)
+            Z = linkage(squareform(D.values, checks=False), method="average")
+            order = leaves_list(Z)
 
-        labels = [pretty_map.get(c, c) for c in Cf.columns]
-        labels_ord = [labels[i] for i in order]
-        Cf_ord = Cf.iloc[order, order]
+            labels = [pretty_map.get(c, c) for c in Cf.columns]
+            labels_ord = [labels[i] for i in order]
+            Cf_ord = Cf.iloc[order, order]
 
-        # 4) heatmap tree
-        fig = go.Figure(data=go.Heatmap(
-            z=Cf_ord.values,
-            x=labels_ord,
-            y=labels_ord,
-            colorscale="RdBu_r",
-            zmin=-1, zmax=1,
-            zmid=0
-        ))
-        corr_w = min(max(1200, 60 * len(labels_ord)), 3000)
+            # 4) heatmap tree
+            fig = go.Figure(data=go.Heatmap(
+                z=Cf_ord.values,
+                x=labels_ord,
+                y=labels_ord,
+                colorscale="RdBu_r",
+                zmin=-1, zmax=1,
+                zmid=0
+            ))
+            corr_w = min(max(1200, 60 * len(labels_ord)), 3000)
 
-        fig.update_layout(
-            title="Feature–Feature Correlation (Pearson)",
-            width=corr_w,
-            height=corr_h,
-            margin=dict(l=180, r=40, t=60, b=180),
-            font=dict(size=16, color="black")
-        )
-
-        fig.update_xaxes(
-            tickfont=dict(size=18, color="black"),
-            title_font=dict(size=22, color="black")
-        )
-
-        fig.update_yaxes(
-            tickfont=dict(size=18, color="black"),
-            title_font=dict(size=22, color="black")
-        )
-
-        fig.update_traces(
-            colorbar=dict(
-                tickfont=dict(size=18, color="black"),
-                title_font=dict(size=20, color="black")
+            fig.update_layout(
+                title="Feature–Feature Correlation (Pearson)",
+                width=corr_w,
+                height=corr_h,
+                margin=dict(l=180, r=40, t=60, b=180),
+                font=dict(size=16, color="black")
             )
-        )
 
-        corr_config = {
-            "toImageButtonOptions": {
-                "format": "png",
-                "filename": "PhenoView_feature_feature_correlation",
-                "scale": 1
+            fig.update_xaxes(
+                tickfont=dict(size=18, color="black"),
+                title_font=dict(size=22, color="black")
+            )
+
+            fig.update_yaxes(
+                tickfont=dict(size=18, color="black"),
+                title_font=dict(size=22, color="black")
+            )
+
+            fig.update_traces(
+                colorbar=dict(
+                    tickfont=dict(size=18, color="black"),
+                    title_font=dict(size=20, color="black")
+                )
+            )
+
+            corr_config = {
+                "toImageButtonOptions": {
+                    "format": "png",
+                    "filename": "PhenoView_feature_feature_correlation",
+                    "scale": 1
+                }
             }
-        }
-        st.plotly_chart(fig, use_container_width=False, config=corr_config)
-        svg_download_button(fig, "PhenoView_feature_feature_correlation.svg")
+            st.plotly_chart(fig, use_container_width=False, config=corr_config)
+            svg_download_button(fig, "PhenoView_feature_feature_correlation.svg")
+        except Exception as e:
+            st.error("Unable to generate feature–feature correlation heatmap. Please check your selections.")
+            st.caption(f"Technical details: {type(e).__name__}: {e}")
 # Page: PCA / UMAP
 elif page == "PCA / UMAP":
 
@@ -1757,51 +1798,53 @@ elif page == "PCA / UMAP":
     else:
         color_series_plot = color_series_raw
 
-    if method == "PCA":
-        emb = PCA(n_components=2, random_state=0).fit_transform(X_scaled)
-        df_emb = pd.DataFrame(emb, index=idx, columns=["PC1", "PC2"])
-        df_emb["SampleID"] = df_emb.index
-        df_emb[color_title] = color_series_plot
+    try:
+        if method == "PCA":
+            emb = PCA(n_components=2, random_state=0).fit_transform(X_scaled)
+            df_emb = pd.DataFrame(emb, index=idx, columns=["PC1", "PC2"])
+            df_emb["SampleID"] = df_emb.index
+            df_emb[color_title] = color_series_plot
 
-        fig = px.scatter(
-            df_emb,
-            x="PC1", y="PC2",
-            color=color_title,
-            hover_name="SampleID",
-            title="PCA (2D)",
-            color_discrete_map=color_discrete_map,
-            category_orders=category_orders
-        )
+            fig = px.scatter(
+                df_emb,
+                x="PC1", y="PC2",
+                color=color_title,
+                hover_name="SampleID",
+                title="PCA (2D)",
+                color_discrete_map=color_discrete_map,
+                category_orders=category_orders
+            )
 
-    else:
-        n_neighbors = st.slider("UMAP n_neighbors", 5, 50, 15, 1, key="umap_neighbors")
-        min_dist = st.slider("UMAP min_dist", 0.0, 1.0, 0.1, 0.05, key="umap_mindist")
+        else:
+            n_neighbors = st.slider("UMAP n_neighbors", 5, 50, 15, 1, key="umap_neighbors")
+            min_dist = st.slider("UMAP min_dist", 0.0, 1.0, 0.1, 0.05, key="umap_mindist")
 
-        reducer = umap.UMAP(
-            n_components=2,
-            n_neighbors=n_neighbors,
-            min_dist=min_dist,
-            random_state=0
-        )
-        emb = reducer.fit_transform(X_scaled)
+            reducer = umap.UMAP(
+                n_components=2,
+                n_neighbors=n_neighbors,
+                min_dist=min_dist,
+                random_state=0
+            )
+            emb = reducer.fit_transform(X_scaled)
 
-        df_emb = pd.DataFrame(emb, index=idx, columns=["UMAP1", "UMAP2"])
-        df_emb["SampleID"] = df_emb.index
-        df_emb[color_title] = color_series_plot
+            df_emb = pd.DataFrame(emb, index=idx, columns=["UMAP1", "UMAP2"])
+            df_emb["SampleID"] = df_emb.index
+            df_emb[color_title] = color_series_plot
 
-        fig = px.scatter(
-            df_emb,
-            x="UMAP1", y="UMAP2",
-            color=color_title,
-            hover_name="SampleID",
-            title="UMAP (2D)",
-            color_discrete_map=color_discrete_map,
-            category_orders=category_orders
-        )
+            fig = px.scatter(
+                df_emb,
+                x="UMAP1", y="UMAP2",
+                color=color_title,
+                hover_name="SampleID",
+                title="UMAP (2D)",
+                color_discrete_map=color_discrete_map,
+                category_orders=category_orders
+            )
 
-    #Apply clean style + arrows
-    fig = style_clean_axes(fig, width=fig_w, height=fig_h)
+        fig = style_clean_axes(fig, width=fig_w, height=fig_h)
 
-    # Show
-    st.plotly_chart(fig, use_container_width=False, config=PLOTLY_CONFIG)
-    svg_download_button(fig, "PhenoView_pca_umap.svg")
+        st.plotly_chart(fig, use_container_width=False, config=PLOTLY_CONFIG)
+        svg_download_button(fig, "PhenoView_pca_umap.svg")
+    except Exception as e:
+        st.error("Unable to generate embedding plot. Please check that valid features and samples are selected.")
+        st.caption(f"Technical details: {type(e).__name__}: {e}")
