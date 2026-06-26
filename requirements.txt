@@ -1,9 +1,0 @@
-streamlit
-plotly
-kaleido
-pandas
-numpy
-scipy
-scikit-learn
-umap-learn
-pillow
