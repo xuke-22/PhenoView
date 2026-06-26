@@ -1,22 +1,21 @@
 # PhenoView
 
-Interactive application for exploration and visualization of phenotype datasets.
+A local, privacy-preserving platform for no-code exploration of phenotype datasets.
 
 ## Abstract
 
-PhenoView is a lightweight, browser-based application designed for the exploration and visualization of high-dimensional phenotype datasets. The application accepts tidy CSV files containing sample-level measurements and provides multiple integrated analytical views, including dimensionality reduction (PCA and UMAP), correlation heatmaps, interactive group comparisons with Welch’s t-test, and z-scored feature heatmaps with hierarchical clustering. PhenoView runs locally using Streamlit and requires no programming expertise, enabling bench scientists to rapidly explore biological datasets and generate publication-ready figures.
+PhenoView is a lightweight, browser-based application for exploring high-dimensional phenotype datasets. Running entirely on the user’s own computer, it requires no programming expertise, no cloud upload, and no commercial software licenses, making phenotype data exploration accessible while preserving data privacy. From a single tidy CSV file, PhenoView provides integrated visualization, dimensionality reduction, correlation analysis, statistical testing, hierarchical clustering, and publication-ready figure export.
 
 **Authors:** Ke Xu, Jesus Maria Gomez-Salinero  
 Weill Cornell Medicine
 
 ## Installation
 
-Clone or download this repository.
+git clone https://github.com/xuke-22/PhenoView.git
 
-Install the required Python packages:
-```bash
+cd PhenoView
+
 pip install -r requirements.txt
-```
 
 ## Running PhenoView
 
@@ -26,7 +25,9 @@ streamlit run phenoview.py
 ```
 This will open a local browser window with the PhenoView interface.
 
-The application runs locally and does not require an internet connection.
+The application runs entirely locally.
+
+No internet connection or cloud upload is required for routine use.
 
 ## Input Data Format
 
@@ -56,10 +57,14 @@ PhenoView provides several integrated analysis views:
 - Data preview and dataset validation
 - PCA and UMAP dimensionality reduction
 - Sample–sample and feature–feature correlation heatmaps
-- Interactive plots (dot, bar, violin) with Welch’s t-test
+- Interactive plots (dot, bar, violin)
+- Welch's t-test
+- Optional Benjamini–Hochberg correction
+- Optional paired analysis using PairID
 - Z-scored heatmaps with hierarchical clustering
-- Optional paired visualization when a pairing column is detected
-- Export of figures (PNG/SVG)
+- Publication-ready PNG and SVG export
+- Dynamic sample filtering
+- Local, privacy-preserving analysis
 
 ## Dependencies
 
@@ -79,7 +84,7 @@ Main Python packages used:
 If you use **PhenoView** in your research, please cite:
 
 Xu K., Gomez-Salinero J.M.  
-PhenoView: an interactive application for exploration and visualization of phenotype datasets.
+PhenoView: a local, privacy-preserving platform for no-code exploration of phenotype datasets.
 
 ## License
 
